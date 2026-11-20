@@ -1,0 +1,16 @@
+{
+  "name": "found-marketplace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A per-account local marketplace powered by MySQL.",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mysql2": "^3.14.0",
+    "nodemailer": "^10.3.1"
+  }
+}
