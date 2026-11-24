@@ -202,6 +202,35 @@
             font-weight: 700;
         }
 
+        .reset-dialog {
+            width: min(420px, calc(100% - 32px));
+            padding: 28px;
+            border: 1px solid rgba(32, 35, 31, .12);
+            border-radius: 16px;
+            background: var(--card);
+            color: var(--ink);
+            box-shadow: 0 24px 70px rgba(43, 48, 37, .22);
+        }
+
+        .reset-dialog::backdrop { background: rgba(32, 35, 31, .45); }
+        .reset-dialog h2 { margin: 0; font: 500 27px Georgia, "Times New Roman", serif; }
+        .reset-dialog p { color: var(--muted); font-size: 13px; line-height: 1.6; }
+        .dialog-actions { display: flex; gap: 10px; }
+        .dialog-actions button {
+            flex: 1;
+            min-height: 42px;
+            border: 1px solid var(--line);
+            border-radius: 9px;
+            cursor: pointer;
+            font: inherit;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .dialog-cancel { background: white; color: var(--ink); }
+        .dialog-submit { background: var(--green); color: white; }
+        .dialog-submit:hover { background: var(--green-dark); }
+        .reset-dialog .message { min-height: 0; }
+
         @media (max-width: 480px) { .auth-card { padding: 28px 22px; } }
     </style>
 </head>
@@ -228,13 +257,25 @@
                     <p class="password-hint" id="password-hint" hidden>At least 6 characters, with an uppercase letter, a lowercase letter, and a special character.</p>
                 </div>
                 <button class="text-link" id="forgot-link" type="button">Forgot password?</button>
-                <button class="text-link" id="back-to-login" type="button" hidden>Back to sign in</button>
                 <button class="submit" id="submit-button" type="submit">Sign in</button>
                 <p class="message" id="form-message" role="alert"></p>
             </form>
             <button class="guest-button" id="guest-button" type="button">Continue as guest</button>
         </section>
     </main>
+    <dialog class="reset-dialog" id="reset-dialog" aria-labelledby="reset-dialog-title">
+        <form id="reset-form">
+            <h2 id="reset-dialog-title">Reset your password</h2>
+            <p>Enter the email address for your account. If an account exists, we’ll send a reset link.</p>
+            <label for="reset-email">Email address</label>
+            <input id="reset-email" name="email" type="email" autocomplete="email" maxlength="320" required>
+            <div class="dialog-actions">
+                <button class="dialog-cancel" id="reset-cancel" type="button">Cancel</button>
+                <button class="dialog-submit" id="reset-submit" type="submit">Send reset link</button>
+            </div>
+            <p class="message" id="reset-message" role="status" aria-live="polite"></p>
+        </form>
+    </dialog>
     <script src="api.js"></script>
     <script src="auth.js"></script>
 </body>

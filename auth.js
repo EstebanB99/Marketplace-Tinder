@@ -3,13 +3,14 @@ const loginTab = document.getElementById("login-tab");
 const registerTab = document.getElementById("register-tab");
 const passwordInput = document.getElementById("password");
 const passwordHint = document.getElementById("password-hint");
-const passwordField = document.getElementById("password-field");
 const submitButton = document.getElementById("submit-button");
 const formMessage = document.getElementById("form-message");
-const guestButton = document.getElementById("guest-button");
 const forgotLink = document.getElementById("forgot-link");
-const backToLogin = document.getElementById("back-to-login");
-const accountTabs = document.getElementById("account-tabs");
+const resetDialog = document.getElementById("reset-dialog");
+const resetForm = document.getElementById("reset-form");
+const resetEmail = document.getElementById("reset-email");
+const resetSubmit = document.getElementById("reset-submit");
+const resetMessage = document.getElementById("reset-message");
 let mode = "login";
 
 function meetsPasswordPolicy(password) {
@@ -28,62 +29,60 @@ function getReturnPath() {
 function setMode(nextMode) {
     mode = nextMode;
     const registering = mode === "register";
-    const requestingReset = mode === "forgot";
-    accountTabs.hidden = requestingReset;
     loginTab.setAttribute("aria-selected", String(!registering));
     registerTab.setAttribute("aria-selected", String(registering));
-    passwordField.hidden = requestingReset;
-    passwordInput.disabled = requestingReset;
-    passwordInput.required = !requestingReset;
     passwordInput.autocomplete = registering ? "new-password" : "current-password";
     passwordInput.minLength = registering ? 6 : 1;
     passwordHint.hidden = !registering;
-    submitButton.textContent = registering ? "Create account" : requestingReset ? "Send reset link" : "Sign in";
-    forgotLink.hidden = registering || requestingReset;
-    backToLogin.hidden = !requestingReset;
-    guestButton.hidden = requestingReset;
-    document.getElementById("page-title").textContent = requestingReset ? "Reset your password." : "Welcome to Found.";
+    submitButton.textContent = registering ? "Create account" : "Sign in";
     document.getElementById("auth-description").textContent = registering
         ? "Verify your email address to create your account and start browsing."
-        : requestingReset
-            ? "Enter the email address linked to your account and we’ll send a reset link if an account exists."
-            : "Sign in to pick up where you left off, or create an account to start browsing.";
+        : "Sign in to pick up where you left off, or create an account to start browsing.";
     formMessage.textContent = "";
     formMessage.style.color = "";
 }
 
 loginTab.addEventListener("click", () => setMode("login"));
 registerTab.addEventListener("click", () => setMode("register"));
-forgotLink.addEventListener("click", () => setMode("forgot"));
-backToLogin.addEventListener("click", () => setMode("login"));
+forgotLink.addEventListener("click", () => {
+    resetForm.reset();
+    resetMessage.textContent = "";
+    resetMessage.style.color = "";
+    resetEmail.value = document.getElementById("email").value;
+    resetDialog.showModal();
+});
+document.getElementById("reset-cancel").addEventListener("click", () => resetDialog.close());
 
 document.getElementById("guest-button").addEventListener("click", () => {
     startGuestSession();
     window.location.replace(getReturnPath());
 });
 
+resetForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    resetSubmit.disabled = true;
+    resetMessage.textContent = "";
+
+    try {
+        const result = await apiRequest("/api/auth/forgot-password", {
+            method: "POST",
+            body: JSON.stringify({ email: resetEmail.value })
+        });
+        resetMessage.textContent = result.message;
+        resetMessage.style.color = "var(--green)";
+    } catch (error) {
+        console.error("Could not request a password reset.", error);
+        resetMessage.style.color = "";
+        resetMessage.textContent = error.message;
+    } finally {
+        resetSubmit.disabled = false;
+    }
+});
+
 authForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     submitButton.disabled = true;
     formMessage.textContent = "";
-
-    if (mode === "forgot") {
-        try {
-            const result = await apiRequest("/api/auth/forgot-password", {
-                method: "POST",
-                body: JSON.stringify({ email: document.getElementById("email").value })
-            });
-            formMessage.textContent = result.message;
-            formMessage.style.color = "var(--green)";
-        } catch (error) {
-            console.error("Could not request a password reset.", error);
-            formMessage.textContent = error.message;
-        } finally {
-            if (submitButton.isConnected) submitButton.disabled = false;
-        }
-        return;
-    }
-
     if (mode === "register" && !meetsPasswordPolicy(passwordInput.value)) {
         formMessage.textContent = "Use at least 6 characters, including an uppercase letter, a lowercase letter, and a special character.";
         submitButton.disabled = false;

@@ -67,6 +67,15 @@ test("offers guest browsing and browser-session-only saves", async () => {
     assert.match(await apiScript.text(), /found_guest_state/);
 });
 
+test("provides a password reset email dialog without disclosing account existence", async () => {
+    const response = await fetch(`${origin}/auth.html`);
+    const page = await response.text();
+    assert.match(page, /id="forgot-link"/);
+    assert.match(page, /<dialog[^>]*id="reset-dialog"/);
+    assert.match(page, /id="reset-email" name="email" type="email"/);
+    assert.match(page, /If an account exists, we’ll send a reset link/);
+});
+
 test("requires an account before returning the user's item queue", async () => {
     const response = await fetch(`${origin}/api/items/next`);
     assert.equal(response.status, 401);
