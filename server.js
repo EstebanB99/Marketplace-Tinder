@@ -4,9 +4,8 @@ const crypto = require("node:crypto");
 const path = require("node:path");
 const express = require("express");
 const mysql = require("mysql2/promise");
-const nodemailer = require("nodemailer");
 const { createMysqlConfig, createMysqlGuestConfig } = require("./mysql-config");
-const { createSmtpConfig } = require("./email-config");
+const { createResendConfig } = require("./email-config");
 
 const app = express();
 const port = Number(process.env.PORT || process.env.APP_PORT || 3000);
@@ -152,25 +151,43 @@ function validatePassword(password) {
 }
 
 async function sendVerificationEmail(email, token) {
-    const config = createSmtpConfig(process.env);
-    const transporter = nodemailer.createTransport({
-        host: config.host,
-        port: config.port,
-        secure: config.secure,
-        ...(config.auth ? { auth: config.auth } : {}),
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 15000
-    });
+    const config = createResendConfig(process.env);
     const verificationUrl = `${config.publicAppUrl}/verify-email.html?token=${encodeURIComponent(token)}`;
+    let response;
+    try {
+        response = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${config.apiKey}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                from: config.from,
+                to: [email],
+                subject: "Verify your Found account",
+                text: `Welcome to Found!\n\nVerify your email address to create your account:\n${verificationUrl}\n\nThis link expires in 30 minutes. If you did not request this account, you can ignore this email.`,
+                html: `<p>Welcome to Found!</p><p>Verify your email address to create your account:</p><p><a href="${verificationUrl}">Verify my email</a></p><p>This link expires in 30 minutes. If you did not request this account, you can ignore this email.</p>`
+            }),
+            signal: AbortSignal.timeout(15000)
+        });
+    } catch (cause) {
+        const error = new Error("Could not reach Resend to send the verification email.", { cause });
+        error.status = 503;
+        throw error;
+    }
 
-    await transporter.sendMail({
-        from: config.from,
-        to: email,
-        subject: "Verify your Found account",
-        text: `Welcome to Found!\n\nVerify your email address to create your account:\n${verificationUrl}\n\nThis link expires in 30 minutes. If you did not request this account, you can ignore this email.`,
-        html: `<p>Welcome to Found!</p><p>Verify your email address to create your account:</p><p><a href="${verificationUrl}">Verify my email</a></p><p>This link expires in 30 minutes. If you did not request this account, you can ignore this email.</p>`
-    });
+    if (!response.ok) {
+        const responseBody = await response.text();
+        let providerMessage;
+        try {
+            providerMessage = JSON.parse(responseBody).message;
+        } catch (error) {
+            if (!(error instanceof SyntaxError)) throw error;
+        }
+        const error = new Error(providerMessage || `Resend rejected the email request (HTTP ${response.status}).`);
+        error.status = 503;
+        throw error;
+    }
 }
 
 function mapItem(row) {
@@ -264,7 +281,7 @@ app.post("/api/auth/register", asyncRoute(async (req, res) => {
 
     const salt = crypto.randomBytes(16);
     const passwordHash = `$scrypt$${salt.toString("base64url")}$${(await scrypt(password, salt)).toString("base64url")}`;
-    const smtpConfig = createSmtpConfig(process.env);
+    createResendConfig(process.env);
     const token = crypto.randomBytes(32).toString("hex");
     const tokenHash = sessionHash(token);
 
@@ -617,9 +634,6 @@ app.use((error, req, res, next) => {
     if (error.status === 409) return res.status(409).json({ error: error.message });
     if (error.status === 503) return res.status(503).json({ error: error.message });
     if (error.code === "ER_DUP_ENTRY") return res.status(409).json({ error: "An account with that email already exists." });
-    if (error.code === "EAUTH" || error.code === "ECONNECTION" || error.code === "ETIMEDOUT") {
-        return res.status(503).json({ error: "Could not send the verification email. Check the email server settings and try again." });
-    }
     if (res.headersSent) return next(error);
     res.status(500).json({ error: "Something went wrong. Please try again." });
 });
@@ -664,3 +678,4 @@ if (require.main === module) {
 
 module.exports = app;
 module.exports.validatePassword = validatePassword;
+module.exports.sendVerificationEmail = sendVerificationEmail;

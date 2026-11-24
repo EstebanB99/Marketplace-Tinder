@@ -27,17 +27,9 @@ services:
         sync: false
       - key: MYSQL_GUEST_PASSWORD
         sync: false
-      - key: SMTP_HOST
+      - key: RESEND_API_KEY
         sync: false
-      - key: SMTP_PORT
-        sync: false
-      - key: SMTP_SECURE
-        sync: false
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASSWORD
-        sync: false
-      - key: SMTP_FROM
+      - key: RESEND_FROM
         sync: false
       - key: PUBLIC_APP_URL
         sync: false

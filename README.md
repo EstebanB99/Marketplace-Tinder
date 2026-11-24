@@ -19,7 +19,7 @@ Found is a small marketplace app backed by MySQL. Each registered account gets i
 ## Run the app
 
 1. Install Node.js 20 or newer.
-2. Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, and `PUBLIC_APP_URL` in `.env` for an SMTP account that can send mail. For Gmail, use `smtp.gmail.com`, port `465`, `SMTP_SECURE=true`, and your full Gmail address as `SMTP_USER`. `SMTP_PASSWORD` must be a Google App Password (requires 2-Step Verification), not your normal Google password. Set `SMTP_FROM` to that Gmail address and `PUBLIC_APP_URL` to the URL users will open from their email. Port 587 normally uses `SMTP_SECURE=false`; port 465 normally uses `SMTP_SECURE=true`. Keep SMTP credentials private.
+2. Configure `RESEND_API_KEY`, `RESEND_FROM`, and `PUBLIC_APP_URL` in `.env`. Create a Resend API key with Sending access and verify the sender domain in Resend. Set `RESEND_FROM` to a sender on that verified domain (for example, `Found <verify@auth.foundtheapp.com>`), and set `PUBLIC_APP_URL` to the URL users should open from their verification email. Keep the API key private.
 3. Run [verification.sql](./verification.sql) once in your MySQL database to create the pending-verification table.
 4. Install dependencies and start the server:
 
@@ -36,7 +36,7 @@ Use HTTPS and set `SESSION_COOKIE_SECURE=true` when deploying outside local deve
 
 The included [render.yaml](./render.yaml) creates a free Render web service from this repository. Push the project to a Git provider, connect it in Render, and configure the environment variables marked as `sync: false` in the Render dashboard. Set `PUBLIC_APP_URL` to the deployed HTTPS URL. Render provides `PORT` automatically.
 
-The Render service must be able to reach your MySQL server over the network. Grant the app and guest database users access from the hosting provider; the guest user should have `SELECT` permission on `ITEMS` only. Render's free web service can spin down when idle and may take about a minute to wake; its free tier is intended for testing and hobby projects, not production.
+The Render service must be able to reach your MySQL server over the network. Grant the app and guest database users access from the hosting provider; the guest user should have `SELECT` permission on `ITEMS` only. Add `RESEND_API_KEY` and `RESEND_FROM` to Render's environment, and verify the sender domain with Resend. Email is sent over Resend's HTTPS API rather than SMTP. Render's free web service can spin down when idle and may take about a minute to wake; its free tier is intended for testing and hobby projects, not production.
 
 ## Item lifecycle
 

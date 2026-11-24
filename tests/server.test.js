@@ -1,12 +1,34 @@
 const assert = require("node:assert/strict");
 const { after, before, test } = require("node:test");
 const app = require("../server");
-const { validatePassword } = require("../server");
+const { sendVerificationEmail, validatePassword } = require("../server");
 const { createMysqlConfig, createMysqlGuestConfig } = require("../mysql-config");
-const { createSmtpConfig } = require("../email-config");
+const { createResendConfig } = require("../email-config");
 
 let server;
 let origin;
+
+async function withResendEnvironment(fetchImplementation, callback) {
+    const previousEnvironment = {
+        RESEND_API_KEY: process.env.RESEND_API_KEY,
+        RESEND_FROM: process.env.RESEND_FROM,
+        PUBLIC_APP_URL: process.env.PUBLIC_APP_URL
+    };
+    const originalFetch = global.fetch;
+    process.env.RESEND_API_KEY = "re_test-key";
+    process.env.RESEND_FROM = "Found <verify@auth.example.com>";
+    process.env.PUBLIC_APP_URL = "https://found.example.com";
+    global.fetch = fetchImplementation;
+    try {
+        return await callback();
+    } finally {
+        global.fetch = originalFetch;
+        for (const [key, value] of Object.entries(previousEnvironment)) {
+            if (value === undefined) delete process.env[key];
+            else process.env[key] = value;
+        }
+    }
+}
 
 before(async () => {
     server = app.listen(0);
@@ -143,19 +165,55 @@ test("uses a separate MySQL guest account for read-only browsing", () => {
     );
 });
 
-test("validates SMTP configuration and its public verification URL", () => {
-    const config = createSmtpConfig({
-        SMTP_HOST: "smtp.example.com",
-        SMTP_PORT: "587",
-        SMTP_SECURE: "false",
-        SMTP_USER: "sender",
-        SMTP_PASSWORD: "secret",
-        SMTP_FROM: "Found <no-reply@example.com>",
+test("validates Resend configuration and its public verification URL", () => {
+    const config = createResendConfig({
+        RESEND_API_KEY: "re_test-key",
+        RESEND_FROM: "Found <verify@auth.example.com>",
         PUBLIC_APP_URL: "https://found.example.com/path"
     });
-    assert.equal(config.port, 587);
-    assert.equal(config.secure, false);
+    assert.equal(config.apiKey, "re_test-key");
+    assert.equal(config.from, "Found <verify@auth.example.com>");
     assert.equal(config.publicAppUrl, "https://found.example.com");
-    assert.equal(config.auth.user, "sender");
-    assert.throws(() => createSmtpConfig({ SMTP_HOST: "smtp.example.com", SMTP_PORT: "bad", SMTP_FROM: "a" }), /SMTP_PORT/);
+    assert.throws(() => createResendConfig({ RESEND_FROM: "Found <verify@example.com>" }), /RESEND_API_KEY/);
+    assert.throws(
+        () => createResendConfig({
+            RESEND_API_KEY: "re_test-key",
+            RESEND_FROM: "Found <verify@example.com>",
+            PUBLIC_APP_URL: "javascript:alert(1)"
+        }),
+        /absolute HTTP or HTTPS URL/
+    );
+});
+
+test("sends verification email through the Resend HTTPS API", async () => {
+    let request;
+    await withResendEnvironment(async (url, options) => {
+        request = { url, options };
+        return { ok: true, status: 200 };
+    }, async () => {
+        await sendVerificationEmail("person@example.com", "a".repeat(64));
+    });
+
+    assert.equal(request.url, "https://api.resend.com/emails");
+    assert.equal(request.options.method, "POST");
+    assert.equal(request.options.headers.Authorization, "Bearer re_test-key");
+    const payload = JSON.parse(request.options.body);
+    assert.equal(payload.from, "Found <verify@auth.example.com>");
+    assert.deepEqual(payload.to, ["person@example.com"]);
+    assert.match(payload.text, /https:\/\/found\.example\.com\/verify-email\.html\?token=/);
+    assert.match(payload.html, /Verify my email/);
+    assert.ok(request.options.signal instanceof AbortSignal);
+});
+
+test("reports Resend API rejection as an email service error", async () => {
+    await withResendEnvironment(async () => ({
+        ok: false,
+        status: 403,
+        text: async () => JSON.stringify({ message: "Domain is not verified." })
+    }), async () => {
+        await assert.rejects(sendVerificationEmail("person@example.com", "a".repeat(64)), {
+            message: "Domain is not verified.",
+            status: 503
+        });
+    });
 });
