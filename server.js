@@ -150,9 +150,12 @@ function validatePassword(password) {
     return null;
 }
 
-async function sendVerificationEmail(email, token) {
-    const config = createResendConfig(process.env);
-    const verificationUrl = `${config.publicAppUrl}/verify-email.html?token=${encodeURIComponent(token)}`;
+async function hashPassword(password) {
+    const salt = crypto.randomBytes(16);
+    return `$scrypt$${salt.toString("base64url")}$${(await scrypt(password, salt)).toString("base64url")}`;
+}
+
+async function sendResendEmail(config, message) {
     let response;
     try {
         response = await fetch("https://api.resend.com/emails", {
@@ -161,17 +164,11 @@ async function sendVerificationEmail(email, token) {
                 Authorization: `Bearer ${config.apiKey}`,
                 "Content-Type": "application/json"
             },
-            body: JSON.stringify({
-                from: config.from,
-                to: [email],
-                subject: "Verify your Found account",
-                text: `Welcome to Found!\n\nVerify your email address to create your account:\n${verificationUrl}\n\nThis link expires in 30 minutes. If you did not request this account, you can ignore this email.`,
-                html: `<p>Welcome to Found!</p><p>Verify your email address to create your account:</p><p><a href="${verificationUrl}">Verify my email</a></p><p>This link expires in 30 minutes. If you did not request this account, you can ignore this email.</p>`
-            }),
+            body: JSON.stringify(message),
             signal: AbortSignal.timeout(15000)
         });
     } catch (cause) {
-        const error = new Error("Could not reach Resend to send the verification email.", { cause });
+        const error = new Error("Could not reach Resend to send the email.", { cause });
         error.status = 503;
         throw error;
     }
@@ -188,6 +185,30 @@ async function sendVerificationEmail(email, token) {
         error.status = 503;
         throw error;
     }
+}
+
+async function sendVerificationEmail(email, token) {
+    const config = createResendConfig(process.env);
+    const verificationUrl = `${config.publicAppUrl}/verify-email.html?token=${encodeURIComponent(token)}`;
+    await sendResendEmail(config, {
+        from: config.from,
+        to: [email],
+        subject: "Verify your Found account",
+        text: `Welcome to Found!\n\nVerify your email address to create your account:\n${verificationUrl}\n\nThis link expires in 30 minutes. If you did not request this account, you can ignore this email.`,
+        html: `<p>Welcome to Found!</p><p>Verify your email address to create your account:</p><p><a href="${verificationUrl}">Verify my email</a></p><p>This link expires in 30 minutes. If you did not request this account, you can ignore this email.</p>`
+    });
+}
+
+async function sendPasswordResetEmail(email, token) {
+    const config = createResendConfig(process.env);
+    const resetUrl = `${config.publicAppUrl}/reset-password.html?token=${encodeURIComponent(token)}`;
+    await sendResendEmail(config, {
+        from: config.from,
+        to: [email],
+        subject: "Reset your Found password",
+        text: `We received a request to reset your Found password.\n\nChoose a new password using this one-time link:\n${resetUrl}\n\nThis link expires in 30 minutes. If you did not request a password reset, you can ignore this email.`,
+        html: `<p>We received a request to reset your Found password.</p><p><a href="${resetUrl}">Choose a new password</a></p><p>This one-time link expires in 30 minutes. If you did not request a password reset, you can ignore this email.</p>`
+    });
 }
 
 function mapItem(row) {
@@ -254,11 +275,13 @@ app.get("/index.html", (req, res) => res.sendFile(path.join(__dirname, "index.ht
 app.get("/saved.html", (req, res) => res.sendFile(path.join(__dirname, "saved.html")));
 app.get("/auth.html", (req, res) => res.sendFile(path.join(__dirname, "auth.html")));
 app.get("/verify-email.html", (req, res) => res.sendFile(path.join(__dirname, "verify-email.html")));
+app.get("/reset-password.html", (req, res) => res.sendFile(path.join(__dirname, "reset-password.html")));
 app.get("/api.js", (req, res) => res.sendFile(path.join(__dirname, "api.js")));
 app.get("/marketplace.js", (req, res) => res.sendFile(path.join(__dirname, "marketplace.js")));
 app.get("/saved-page.js", (req, res) => res.sendFile(path.join(__dirname, "saved-page.js")));
 app.get("/auth.js", (req, res) => res.sendFile(path.join(__dirname, "auth.js")));
 app.get("/verify-email.js", (req, res) => res.sendFile(path.join(__dirname, "verify-email.js")));
+app.get("/reset-password.js", (req, res) => res.sendFile(path.join(__dirname, "reset-password.js")));
 
 app.get("/api/guest/items", asyncRoute(async (req, res) => {
     const [rows] = await guestDatabasePool.execute(
@@ -279,8 +302,7 @@ app.post("/api/auth/register", asyncRoute(async (req, res) => {
     const passwordError = validatePassword(password);
     if (passwordError) return res.status(400).json({ error: passwordError });
 
-    const salt = crypto.randomBytes(16);
-    const passwordHash = `$scrypt$${salt.toString("base64url")}$${(await scrypt(password, salt)).toString("base64url")}`;
+    const passwordHash = await hashPassword(password);
     createResendConfig(process.env);
     const token = crypto.randomBytes(32).toString("hex");
     const tokenHash = sessionHash(token);
@@ -360,6 +382,90 @@ app.post("/api/auth/login", asyncRoute(async (req, res) => {
     if (!result) return res.status(401).json({ error: "Email or password is incorrect." });
     setSessionCookie(res, result.token);
     res.json({ user: result.user });
+}));
+
+app.post("/api/auth/forgot-password", asyncRoute(async (req, res) => {
+    const email = normalizeEmail(req.body?.email);
+    if (!isValidEmail(email)) return res.status(400).json({ error: "Enter a valid email address." });
+
+    const user = await withTransaction(async (connection) => {
+        const result = await connection.execute(
+            "SELECT USER_ID AS userId, EMAIL AS email FROM APP_USERS WHERE EMAIL = :email",
+            { email }
+        );
+        return result.rows[0] || null;
+    });
+
+    if (user) {
+        const token = crypto.randomBytes(32).toString("hex");
+        const tokenHash = sessionHash(token);
+        await withTransaction(async (connection) => {
+            await connection.execute(
+                "DELETE FROM PASSWORD_RESETS WHERE USER_ID = :userId",
+                { userId: user.userId }
+            );
+            await connection.execute(
+                `INSERT INTO PASSWORD_RESETS (TOKEN_HASH, USER_ID, EXPIRES_AT)
+                 VALUES (:tokenHash, :userId, DATE_ADD(CURRENT_TIMESTAMP(6), INTERVAL 30 MINUTE))`,
+                { tokenHash, userId: user.userId }
+            );
+        });
+
+        try {
+            await sendPasswordResetEmail(user.email, token);
+        } catch (error) {
+            await withTransaction((connection) => connection.execute(
+                "DELETE FROM PASSWORD_RESETS WHERE TOKEN_HASH = :tokenHash",
+                { tokenHash }
+            ));
+            if (!error.status) error.status = 503;
+            throw error;
+        }
+    }
+
+    res.status(202).json({
+        message: "If an account exists for that email, a password reset link will be sent shortly."
+    });
+}));
+
+app.post("/api/auth/reset-password", asyncRoute(async (req, res) => {
+    const token = req.body?.token;
+    const password = req.body?.password;
+    if (typeof token !== "string" || !/^[a-f0-9]{64}$/i.test(token)) {
+        return res.status(400).json({ error: "This password reset link is invalid or has expired." });
+    }
+    const passwordError = validatePassword(password);
+    if (passwordError) return res.status(400).json({ error: passwordError });
+
+    const changed = await withTransaction(async (connection) => {
+        const resetResult = await connection.execute(
+            `SELECT USER_ID AS userId
+             FROM PASSWORD_RESETS
+             WHERE TOKEN_HASH = :tokenHash AND EXPIRES_AT > CURRENT_TIMESTAMP(6)
+             FOR UPDATE`,
+            { tokenHash: sessionHash(token) }
+        );
+        const reset = resetResult.rows[0];
+        if (!reset) return false;
+
+        const passwordHash = await hashPassword(password);
+        await connection.execute(
+            "UPDATE APP_USERS SET PASSWORD_HASH = :passwordHash WHERE USER_ID = :userId",
+            { passwordHash, userId: reset.userId }
+        );
+        await connection.execute(
+            "DELETE FROM USER_SESSIONS WHERE USER_ID = :userId",
+            { userId: reset.userId }
+        );
+        await connection.execute(
+            "DELETE FROM PASSWORD_RESETS WHERE USER_ID = :userId",
+            { userId: reset.userId }
+        );
+        return true;
+    });
+
+    if (!changed) return res.status(400).json({ error: "This password reset link is invalid or has expired." });
+    res.json({ message: "Your password has been reset. Sign in with your new password." });
 }));
 
 app.post("/api/auth/verify-email", asyncRoute(async (req, res) => {
@@ -678,4 +784,5 @@ if (require.main === module) {
 
 module.exports = app;
 module.exports.validatePassword = validatePassword;
+module.exports.sendPasswordResetEmail = sendPasswordResetEmail;
 module.exports.sendVerificationEmail = sendVerificationEmail;

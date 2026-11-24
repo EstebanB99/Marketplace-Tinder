@@ -189,6 +189,19 @@
             line-height: 1.5;
         }
 
+        .text-link {
+            display: block;
+            margin: -7px 0 15px auto;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            color: var(--green);
+            cursor: pointer;
+            font: inherit;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
         @media (max-width: 480px) { .auth-card { padding: 28px 22px; } }
     </style>
 </head>
@@ -202,16 +215,20 @@
             <p class="eyebrow">A marketplace for good finds</p>
             <h1 id="page-title">Welcome to Found.</h1>
             <p class="subheading" id="auth-description">Sign in to pick up where you left off, or create an account to start browsing.</p>
-            <div class="tabs" role="tablist" aria-label="Account options">
+            <div class="tabs" id="account-tabs" role="tablist" aria-label="Account options">
                 <button class="tab" id="login-tab" type="button" role="tab" aria-selected="true">Sign in</button>
                 <button class="tab" id="register-tab" type="button" role="tab" aria-selected="false">Create account</button>
             </div>
             <form id="auth-form">
                 <label for="email">Email address</label>
                 <input id="email" name="email" type="email" autocomplete="email" maxlength="320" required>
-                <label for="password">Password</label>
-                <input id="password" name="password" type="password" autocomplete="current-password" minlength="1" maxlength="128" required>
-                <p class="password-hint" id="password-hint" hidden>At least 6 characters, with an uppercase letter, a lowercase letter, and a special character.</p>
+                <div id="password-field">
+                    <label for="password">Password</label>
+                    <input id="password" name="password" type="password" autocomplete="current-password" minlength="1" maxlength="128" required>
+                    <p class="password-hint" id="password-hint" hidden>At least 6 characters, with an uppercase letter, a lowercase letter, and a special character.</p>
+                </div>
+                <button class="text-link" id="forgot-link" type="button">Forgot password?</button>
+                <button class="text-link" id="back-to-login" type="button" hidden>Back to sign in</button>
                 <button class="submit" id="submit-button" type="submit">Sign in</button>
                 <p class="message" id="form-message" role="alert"></p>
             </form>

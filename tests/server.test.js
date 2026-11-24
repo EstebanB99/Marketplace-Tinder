@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const { after, before, test } = require("node:test");
 const app = require("../server");
-const { sendVerificationEmail, validatePassword } = require("../server");
+const { sendPasswordResetEmail, sendVerificationEmail, validatePassword } = require("../server");
 const { createMysqlConfig, createMysqlGuestConfig } = require("../mysql-config");
 const { createResendConfig } = require("../email-config");
 
@@ -46,11 +46,13 @@ test("serves the account and marketplace pages with their client scripts", async
         "/saved.html",
         "/auth.html",
         "/verify-email.html",
+        "/reset-password.html",
         "/api.js",
         "/marketplace.js",
         "/saved-page.js",
         "/auth.js",
-        "/verify-email.js"
+        "/verify-email.js",
+        "/reset-password.js"
     ]) {
         const response = await fetch(`${origin}${route}`);
         assert.equal(response.status, 200, `${route} should be available`);
@@ -79,6 +81,34 @@ test("rejects malformed registration before accessing the database", async () =>
     });
     assert.equal(response.status, 400);
     assert.deepEqual(await response.json(), { error: "Enter a valid email address." });
+});
+
+test("rejects malformed password reset requests before accessing the database", async () => {
+    const requestReset = await fetch(`${origin}/api/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "not-an-email" })
+    });
+    assert.equal(requestReset.status, 400);
+    assert.deepEqual(await requestReset.json(), { error: "Enter a valid email address." });
+
+    const invalidToken = await fetch(`${origin}/api/auth/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: "not-a-token", password: "Abcdef!" })
+    });
+    assert.equal(invalidToken.status, 400);
+    assert.deepEqual(await invalidToken.json(), { error: "This password reset link is invalid or has expired." });
+
+    const invalidPassword = await fetch(`${origin}/api/auth/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: "a".repeat(64), password: "NoSpecial1" })
+    });
+    assert.equal(invalidPassword.status, 400);
+    assert.deepEqual(await invalidPassword.json(), {
+        error: "Include an uppercase letter, a lowercase letter, and a special character."
+    });
 });
 
 test("enforces the registration password policy before accessing the database", async () => {
@@ -203,6 +233,23 @@ test("sends verification email through the Resend HTTPS API", async () => {
     assert.match(payload.text, /https:\/\/found\.example\.com\/verify-email\.html\?token=/);
     assert.match(payload.html, /Verify my email/);
     assert.ok(request.options.signal instanceof AbortSignal);
+});
+
+test("sends password reset email through the Resend HTTPS API", async () => {
+    let request;
+    await withResendEnvironment(async (url, options) => {
+        request = { url, options };
+        return { ok: true, status: 200 };
+    }, async () => {
+        await sendPasswordResetEmail("person@example.com", "b".repeat(64));
+    });
+
+    assert.equal(request.url, "https://api.resend.com/emails");
+    const payload = JSON.parse(request.options.body);
+    assert.equal(payload.subject, "Reset your Found password");
+    assert.deepEqual(payload.to, ["person@example.com"]);
+    assert.match(payload.text, /https:\/\/found\.example\.com\/reset-password\.html\?token=b{64}/);
+    assert.match(payload.html, /Choose a new password/);
 });
 
 test("reports Resend API rejection as an email service error", async () => {

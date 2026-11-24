@@ -21,14 +21,23 @@ Found is a small marketplace app backed by MySQL. Each registered account gets i
 1. Install Node.js 20 or newer.
 2. Configure `RESEND_API_KEY`, `RESEND_FROM`, and `PUBLIC_APP_URL` in `.env`. Create a Resend API key with Sending access and verify the sender domain in Resend. Set `RESEND_FROM` to a sender on that verified domain (for example, `Found <verify@auth.foundtheapp.com>`), and set `PUBLIC_APP_URL` to the URL users should open from their verification email. Keep the API key private.
 3. Run [verification.sql](./verification.sql) once in your MySQL database to create the pending-verification table.
-4. Install dependencies and start the server:
+4. Run [password-resets.sql](./password-resets.sql) once to create the password-reset token table. Grant the app database user the following additional access (replace the database, user, and host values as needed):
+
+   ```sql
+   GRANT SELECT, INSERT, DELETE ON found.PASSWORD_RESETS TO 'found_app'@'%';
+   GRANT UPDATE ON found.APP_USERS TO 'found_app'@'%';
+   GRANT DELETE ON found.USER_SESSIONS TO 'found_app'@'%';
+   ```
+
+   Reset links expire after 30 minutes and can be used once. Resetting a password invalidates all existing account sessions, so the user must sign in again.
+5. Install dependencies and start the server:
 
    ```powershell
    npm install
    npm start
    ```
 
-5. Open `http://localhost:3000`. Visitors can sign in, create an account, or continue as a guest. New users receive a verification link; their account and item copy are created only after they open that link. Guests browse using the SELECT-only database account; keeping or passing a guest item affects only the current browser session.
+6. Open `http://localhost:3000`. Visitors can sign in, create an account, or continue as a guest. New users receive a verification link; their account and item copy are created only after they open that link. Signed-in users can request a password-reset link from the sign-in page. Guests browse using the SELECT-only database account; keeping or passing a guest item affects only the current browser session.
 
 Use HTTPS and set `SESSION_COOKIE_SECURE=true` when deploying outside local development. Do not commit `.env` or use the example database password.
 
