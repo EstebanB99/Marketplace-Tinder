@@ -97,6 +97,10 @@ function renderItem(item) {
     description.className = "description";
     description.textContent = item.description;
 
+    const price = document.createElement("p");
+    price.className = "item-price";
+    price.textContent = formatItemPrice(item.price);
+
     const footer = document.createElement("div");
     footer.className = "card-footer";
     const passButton = document.createElement("button");
@@ -117,7 +121,7 @@ function renderItem(item) {
     const keyboardHint = document.createElement("p");
     keyboardHint.className = "keyboard-hint";
     keyboardHint.textContent = "Press ← to pass or → to keep";
-    content.append(titleLine, description, makeLocation(item), footer, keyboardHint);
+    content.append(titleLine, price, description, makeLocation(item), footer, keyboardHint);
     article.append(photoWrap, content);
     itemArea.replaceChildren(article);
 }

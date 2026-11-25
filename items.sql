@@ -2,6 +2,7 @@ CREATE TABLE APP_USERS (
     USER_ID BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
     EMAIL VARCHAR(320) NOT NULL UNIQUE,
     PASSWORD_HASH VARCHAR(200) NOT NULL,
+    PREFERRED_CATEGORIES JSON NULL,
     CREATED_AT TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
 ) ENGINE=InnoDB;
 
@@ -14,6 +15,7 @@ CREATE TABLE ITEMS (
     STATE VARCHAR(100) NOT NULL,
     ZIPCODE VARCHAR(20) NOT NULL,
     IMAGE_URL VARCHAR(1000) NOT NULL,
+    PRICE DECIMAL(10,2) NULL,
     CREATED_AT TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
 ) ENGINE=InnoDB;
 
@@ -61,25 +63,25 @@ CREATE TABLE USER_SESSIONS (
 ) ENGINE=InnoDB;
 
 INSERT IGNORE INTO ITEMS
-    (ITEM_ID, NAME, DESCRIPTION, ADDRESS, CITY, STATE, ZIPCODE, IMAGE_URL)
+    (ITEM_ID, NAME, DESCRIPTION, ADDRESS, CITY, STATE, ZIPCODE, IMAGE_URL, PRICE)
 VALUES
     (1001, 'The Sunday Sofa',
      'A deep, forest-green velvet sofa with a beautifully worn-in feel. Room for a slow Sunday and one more friend.',
      '402 NW 9th St', 'Washington', 'IN', '47501',
-     'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&w=1400&q=85'),
+     'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&w=1400&q=85', 850.00),
     (1002, 'Oak & Easy Chair',
      'Solid oak frame, woven seat, and the kind of character that only gets better with time.',
      '128 Maple Ave', 'Bloomington', 'IN', '47404',
-     'https://images.unsplash.com/photo-1567538096630-e0c55bd6374c?auto=format&fit=crop&w=1400&q=85'),
+     'https://images.unsplash.com/photo-1567538096630-e0c55bd6374c?auto=format&fit=crop&w=1400&q=85', 275.00),
     (1003, 'Little Sun Lamp',
      'A vintage brass table lamp with a soft linen shade. Just the right light for a favorite reading corner.',
      '77 E Kirkwood Ave', 'Bloomington', 'IN', '47408',
-     'https://images.unsplash.com/photo-1507473885765-e6ed057f782c?auto=format&fit=crop&w=1400&q=85'),
+     'https://images.unsplash.com/photo-1507473885765-e6ed057f782c?auto=format&fit=crop&w=1400&q=85', 85.00),
     (1004, 'The Sunday Table',
      'A sturdy farmhouse dining table with a honey finish. Plenty of space for dinner, projects, and everything in between.',
      '21 College Ave', 'Terre Haute', 'IN', '47807',
-     'https://images.unsplash.com/photo-1617806118233-18e1de247200?auto=format&fit=crop&w=1400&q=85'),
+     'https://images.unsplash.com/photo-1617806118233-18e1de247200?auto=format&fit=crop&w=1400&q=85', 450.00),
     (1005, 'Plant Parent Starter',
      'Three happy, easy-care houseplants in handmade ceramic pots, ready to brighten up a sunny window.',
      '305 Main St', 'Carmel', 'IN', '46032',
-     'https://images.unsplash.com/photo-1485955900006-10f4d324d411?auto=format&fit=crop&w=1400&q=85');
+     'https://images.unsplash.com/photo-1485955900006-10f4d324d411?auto=format&fit=crop&w=1400&q=85', 55.00);

@@ -103,7 +103,13 @@ authForm.addEventListener("submit", async (event) => {
             authForm.reset();
             return;
         }
-        window.location.replace(getReturnPath());
+        if (result.user.needsPreferences) {
+            const preferencesUrl = new URL("/preferences.html", window.location.origin);
+            if (getReturnPath() === "/saved.html") preferencesUrl.searchParams.set("returnTo", "/saved.html");
+            window.location.replace(preferencesUrl.toString());
+        } else {
+            window.location.replace(getReturnPath());
+        }
     } catch (error) {
         console.error("Could not complete account sign-in.", error);
         formMessage.style.color = "";
@@ -115,8 +121,14 @@ authForm.addEventListener("submit", async (event) => {
 
 (async function redirectIfSignedIn() {
     try {
-        await apiRequest("/api/me");
-        window.location.replace(getReturnPath());
+        const { user } = await apiRequest("/api/me");
+        if (user.needsPreferences) {
+            const preferencesUrl = new URL("/preferences.html", window.location.origin);
+            if (getReturnPath() === "/saved.html") preferencesUrl.searchParams.set("returnTo", "/saved.html");
+            window.location.replace(preferencesUrl.toString());
+        } else {
+            window.location.replace(getReturnPath());
+        }
     } catch (error) {
         if (error.status !== 401) {
             console.error("Could not check the current account.", error);

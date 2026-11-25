@@ -30,14 +30,15 @@ Found is a small marketplace app backed by MySQL. Each registered account gets i
    ```
 
    Reset links expire after 30 minutes and can be used once. Resetting a password invalidates all existing account sessions, so the user must sign in again.
-5. Install dependencies and start the server:
+5. Run [profile-and-prices.sql](./profile-and-prices.sql) once to add sample listing prices and the shopping-preferences column. This migration marks existing accounts as already onboarded; new accounts will be asked to select preferences after email verification. The existing five sample listings are assigned example USD prices that you can change directly in `ITEMS`.
+6. Install dependencies and start the server:
 
    ```powershell
    npm install
    npm start
    ```
 
-6. Open `http://localhost:3000`. Visitors can sign in, create an account, or continue as a guest. New users receive a verification link; their account and item copy are created only after they open that link. Signed-in users can request a password-reset link from the sign-in page. Guests browse using the SELECT-only database account; keeping or passing a guest item affects only the current browser session.
+7. Open `http://localhost:3000`. Visitors can sign in, create an account, or continue as a guest. New users receive a verification link; their account and item copy are created only after they open that link. On their first sign-in, new users select shopping categories, which are stored in `APP_USERS.PREFERRED_CATEGORIES`; these selections are collected for their profile and do not yet change the listings shown. Signed-in users can request a password-reset link from the sign-in page. Guests browse using the SELECT-only database account; keeping or passing a guest item affects only the current browser session.
 
 Use HTTPS and set `SESSION_COOKIE_SECURE=true` when deploying outside local development. Do not commit `.env` or use the example database password.
 
@@ -54,5 +55,7 @@ The Render service must be able to reach your MySQL server over the network. Gra
 - Passing deletes the user's row from `USER_ITEMS`. `USER_ITEM_HISTORY` keeps the per-account status and shown count, preventing passed items from returning by accident.
 - **Show passed items again** copies all passed listings back into the user's queue and updates their history state. This is the only action that restores passed items.
 - Saved finds are the user's `KEPT` copies. Removing one returns it to that user's review queue.
+- `ITEMS.PRICE` stores listing prices in USD; the price appears on browse and saved-item cards.
+- `APP_USERS.PREFERRED_CATEGORIES` stores the shopping categories selected during new-account onboarding.
 - Registration requires at least 6 characters, one uppercase letter, one lowercase letter, and one non-alphanumeric special character.
 - Pending email verifications are stored as password hashes and one-time token hashes, expire after 30 minutes, and do not create an account or item copy until verified.

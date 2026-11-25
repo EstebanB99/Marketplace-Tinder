@@ -1,7 +1,14 @@
 const assert = require("node:assert/strict");
 const { after, before, test } = require("node:test");
 const app = require("../server");
-const { sendPasswordResetEmail, sendVerificationEmail, validatePassword } = require("../server");
+const {
+    sendPasswordResetEmail,
+    sendVerificationEmail,
+    mapItem,
+    shoppingCategories,
+    validatePassword,
+    validateShoppingPreferences
+} = require("../server");
 const { createMysqlConfig, createMysqlGuestConfig } = require("../mysql-config");
 const { createResendConfig } = require("../email-config");
 
@@ -45,18 +52,73 @@ test("serves the account and marketplace pages with their client scripts", async
         "/",
         "/saved.html",
         "/auth.html",
+        "/preferences.html",
         "/verify-email.html",
         "/reset-password.html",
         "/api.js",
         "/marketplace.js",
         "/saved-page.js",
         "/auth.js",
+        "/preferences.js",
         "/verify-email.js",
         "/reset-password.js"
     ]) {
         const response = await fetch(`${origin}${route}`);
         assert.equal(response.status, 200, `${route} should be available`);
     }
+});
+
+test("collects shopping preferences for new accounts", async () => {
+    const response = await fetch(`${origin}/preferences.html`);
+    const page = await response.text();
+    assert.match(page, /What do you love to shop for/);
+    for (const category of shoppingCategories) {
+        assert.ok(page.includes(`value="${category}"`), `${category} should be an available preference`);
+    }
+
+    assert.equal(validateShoppingPreferences(["Furniture", "Plants"]), null);
+    assert.match(validateShoppingPreferences([]), /at least one/);
+    assert.match(validateShoppingPreferences(["Unlisted category"]), /valid shopping category/);
+    assert.match(validateShoppingPreferences(["Plants", "Plants"]), /valid shopping category/);
+});
+
+test("includes USD prices in item responses and handles unlisted prices", () => {
+    const item = mapItem({
+        itemID: 1001,
+        name: "The Sunday Sofa",
+        description: "A sample sofa",
+        address: "402 NW 9th St",
+        city: "Washington",
+        state: "IN",
+        zipcode: "47501",
+        image: "https://example.com/sofa.jpg",
+        price: "850.00"
+    });
+    assert.equal(item.price, 850);
+    assert.equal(mapItem({ ...item, price: null }).price, null);
+});
+
+test("renders item prices on browse and saved-item cards", async () => {
+    for (const [script, page] of [
+        ["/marketplace.js", "/"],
+        ["/saved-page.js", "/saved.html"]
+    ]) {
+        const [scriptResponse, pageResponse] = await Promise.all([
+            fetch(`${origin}${script}`),
+            fetch(`${origin}${page}`)
+        ]);
+        assert.match(await scriptResponse.text(), /formatItemPrice\(item\.price\)/);
+        assert.match(await pageResponse.text(), /\.item-price/);
+    }
+});
+
+test("requires a signed-in account before saving shopping preferences", async () => {
+    const response = await fetch(`${origin}/api/profile/preferences`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ categories: ["Furniture"] })
+    });
+    assert.equal(response.status, 401);
 });
 
 test("offers guest browsing and browser-session-only saves", async () => {

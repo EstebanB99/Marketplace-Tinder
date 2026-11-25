@@ -12,6 +12,16 @@ const port = Number(process.env.PORT || process.env.APP_PORT || 3000);
 const sessionCookieName = "found_session";
 const sessionDurationMs = 7 * 24 * 60 * 60 * 1000;
 const cookieSecure = process.env.SESSION_COOKIE_SECURE === "true";
+const shoppingCategories = [
+    "Furniture",
+    "Home decor",
+    "Lighting",
+    "Plants",
+    "Kitchen & dining",
+    "Storage",
+    "Outdoor",
+    "Other"
+];
 let databasePool;
 let guestDatabasePool;
 const scrypt = (password, salt) => new Promise((resolve, reject) => {
@@ -111,14 +121,20 @@ async function requireUser(req, res, next) {
     try {
         const user = await withTransaction(async (connection) => {
             const result = await connection.execute(
-                `SELECT u.USER_ID AS userId, u.EMAIL AS email
+                `SELECT u.USER_ID AS userId, u.EMAIL AS email,
+                        u.PREFERRED_CATEGORIES AS preferredCategories
                  FROM USER_SESSIONS s
                  JOIN APP_USERS u ON u.USER_ID = s.USER_ID
                  WHERE s.TOKEN_HASH = :tokenHash
                    AND s.EXPIRES_AT > CURRENT_TIMESTAMP(6)`,
                 { tokenHash: sessionHash(token) },
             );
-            return result.rows[0] || null;
+            const user = result.rows[0];
+            return user ? {
+                userId: user.userId,
+                email: user.email,
+                needsPreferences: user.preferredCategories === null
+            } : null;
         });
 
         if (!user) {
@@ -146,6 +162,15 @@ function validatePassword(password) {
     }
     if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[^A-Za-z0-9\s]/.test(password)) {
         return "Include an uppercase letter, a lowercase letter, and a special character.";
+    }
+    return null;
+}
+
+function validateShoppingPreferences(categories) {
+    if (!Array.isArray(categories) || categories.length === 0 ||
+        categories.some((category) => typeof category !== "string" || !shoppingCategories.includes(category)) ||
+        new Set(categories).size !== categories.length) {
+        return "Choose at least one valid shopping category.";
     }
     return null;
 }
@@ -220,6 +245,7 @@ function mapItem(row) {
         city: row.city,
         state: row.state,
         zipcode: row.zipcode,
+        price: row.price === null || row.price === undefined ? null : Number(row.price),
         image: row.image,
         imageAlt: `${row.name} listing`
     };
@@ -275,19 +301,21 @@ app.get("/index.html", (req, res) => res.sendFile(path.join(__dirname, "index.ht
 app.get("/saved.html", (req, res) => res.sendFile(path.join(__dirname, "saved.html")));
 app.get("/auth.html", (req, res) => res.sendFile(path.join(__dirname, "auth.html")));
 app.get("/verify-email.html", (req, res) => res.sendFile(path.join(__dirname, "verify-email.html")));
+app.get("/preferences.html", (req, res) => res.sendFile(path.join(__dirname, "preferences.html")));
 app.get("/reset-password.html", (req, res) => res.sendFile(path.join(__dirname, "reset-password.html")));
 app.get("/api.js", (req, res) => res.sendFile(path.join(__dirname, "api.js")));
 app.get("/marketplace.js", (req, res) => res.sendFile(path.join(__dirname, "marketplace.js")));
 app.get("/saved-page.js", (req, res) => res.sendFile(path.join(__dirname, "saved-page.js")));
 app.get("/auth.js", (req, res) => res.sendFile(path.join(__dirname, "auth.js")));
 app.get("/verify-email.js", (req, res) => res.sendFile(path.join(__dirname, "verify-email.js")));
+app.get("/preferences.js", (req, res) => res.sendFile(path.join(__dirname, "preferences.js")));
 app.get("/reset-password.js", (req, res) => res.sendFile(path.join(__dirname, "reset-password.js")));
 
 app.get("/api/guest/items", asyncRoute(async (req, res) => {
     const [rows] = await guestDatabasePool.execute(
         `SELECT ITEM_ID AS itemID, NAME AS name, DESCRIPTION AS description,
                 ADDRESS AS address, CITY AS city, STATE AS state, ZIPCODE AS zipcode,
-                IMAGE_URL AS image
+                IMAGE_URL AS image, PRICE AS price
          FROM ITEMS
          ORDER BY ITEM_ID`
     );
@@ -355,7 +383,8 @@ app.post("/api/auth/login", asyncRoute(async (req, res) => {
 
     const result = await withTransaction(async (connection) => {
         const userResult = await connection.execute(
-            `SELECT USER_ID AS userId, EMAIL AS email, PASSWORD_HASH AS passwordHash
+            `SELECT USER_ID AS userId, EMAIL AS email, PASSWORD_HASH AS passwordHash,
+                    PREFERRED_CATEGORIES AS preferredCategories
              FROM APP_USERS WHERE EMAIL = :email`,
             { email },
         );
@@ -376,7 +405,14 @@ app.post("/api/auth/login", asyncRoute(async (req, res) => {
             "DELETE FROM USER_SESSIONS WHERE EXPIRES_AT <= CURRENT_TIMESTAMP(6)"
         );
         const token = await createSession(connection, user.userId);
-        return { user: { userId: user.userId, email: user.email }, token };
+        return {
+            user: {
+                userId: user.userId,
+                email: user.email,
+                needsPreferences: user.preferredCategories === null
+            },
+            token
+        };
     });
 
     if (!result) return res.status(401).json({ error: "Email or password is incorrect." });
@@ -515,7 +551,10 @@ app.post("/api/auth/verify-email", asyncRoute(async (req, res) => {
             { email: pending.email }
         );
         const sessionToken = await createSession(connection, userId);
-        return { user: { userId, email: pending.email }, token: sessionToken };
+        return {
+            user: { userId, email: pending.email, needsPreferences: true },
+            token: sessionToken
+        };
     });
 
     if (!result) {
@@ -539,6 +578,28 @@ app.post("/api/auth/logout", asyncRoute(async (req, res) => {
 
 app.get("/api/me", requireUser, (req, res) => res.json({ user: req.user }));
 
+app.post("/api/profile/preferences", requireUser, asyncRoute(async (req, res) => {
+    const categories = req.body?.categories;
+    const validationError = validateShoppingPreferences(categories);
+    if (validationError) return res.status(400).json({ error: validationError });
+
+    const saved = await withTransaction(async (connection) => {
+        const userResult = await connection.execute(
+            "SELECT PREFERRED_CATEGORIES AS preferredCategories FROM APP_USERS WHERE USER_ID = :userId FOR UPDATE",
+            { userId: req.user.userId }
+        );
+        if (!userResult.rows[0] || userResult.rows[0].preferredCategories !== null) return false;
+        await connection.execute(
+            "UPDATE APP_USERS SET PREFERRED_CATEGORIES = :categories WHERE USER_ID = :userId",
+            { categories: JSON.stringify(categories), userId: req.user.userId }
+        );
+        return true;
+    });
+
+    if (!saved) return res.status(409).json({ error: "Shopping preferences have already been saved." });
+    res.json({ message: "Your shopping preferences have been saved." });
+}));
+
 app.get("/api/items/next", requireUser, asyncRoute(async (req, res) => {
     const result = await withTransaction(async (connection) => {
         await connection.execute(
@@ -548,24 +609,26 @@ app.get("/api/items/next", requireUser, asyncRoute(async (req, res) => {
         await ensureUserHasCatalogItems(connection, req.user.userId);
 
         let itemResult = await connection.execute(
-            `SELECT ITEM_ID AS itemID, NAME AS name, DESCRIPTION AS description,
-                    ADDRESS AS address, CITY AS city, STATE AS state, ZIPCODE AS zipcode,
-                    IMAGE_URL AS image
-             FROM USER_ITEMS
-             WHERE USER_ID = :userId AND STATUS = 'SHOWN'
-             ORDER BY ITEM_ID
+            `SELECT c.ITEM_ID AS itemID, c.NAME AS name, c.DESCRIPTION AS description,
+                    c.ADDRESS AS address, c.CITY AS city, c.STATE AS state, c.ZIPCODE AS zipcode,
+                    c.IMAGE_URL AS image, i.PRICE AS price
+             FROM USER_ITEMS c
+             JOIN ITEMS i ON i.ITEM_ID = c.ITEM_ID
+             WHERE c.USER_ID = :userId AND c.STATUS = 'SHOWN'
+             ORDER BY c.ITEM_ID
              LIMIT 1`,
             { userId: req.user.userId },
         );
 
         if (!itemResult.rows[0]) {
             itemResult = await connection.execute(
-                `SELECT ITEM_ID AS itemID, NAME AS name, DESCRIPTION AS description,
-                        ADDRESS AS address, CITY AS city, STATE AS state, ZIPCODE AS zipcode,
-                        IMAGE_URL AS image
-                 FROM USER_ITEMS
-                 WHERE USER_ID = :userId AND STATUS = 'AVAILABLE'
-                 ORDER BY ITEM_ID
+                `SELECT c.ITEM_ID AS itemID, c.NAME AS name, c.DESCRIPTION AS description,
+                        c.ADDRESS AS address, c.CITY AS city, c.STATE AS state, c.ZIPCODE AS zipcode,
+                        c.IMAGE_URL AS image, i.PRICE AS price
+                 FROM USER_ITEMS c
+                 JOIN ITEMS i ON i.ITEM_ID = c.ITEM_ID
+                 WHERE c.USER_ID = :userId AND c.STATUS = 'AVAILABLE'
+                 ORDER BY c.ITEM_ID
                  LIMIT 1`,
                 { userId: req.user.userId },
             );
@@ -691,12 +754,13 @@ app.post("/api/items/restore-passed", requireUser, asyncRoute(async (req, res) =
 
 app.get("/api/items/saved", requireUser, asyncRoute(async (req, res) => {
     const result = await withTransaction((connection) => connection.execute(
-        `SELECT ITEM_ID AS itemID, NAME AS name, DESCRIPTION AS description,
-                ADDRESS AS address, CITY AS city, STATE AS state, ZIPCODE AS zipcode,
-                IMAGE_URL AS image
-         FROM USER_ITEMS
-         WHERE USER_ID = :userId AND STATUS = 'KEPT'
-         ORDER BY ITEM_ID`,
+        `SELECT c.ITEM_ID AS itemID, c.NAME AS name, c.DESCRIPTION AS description,
+                c.ADDRESS AS address, c.CITY AS city, c.STATE AS state, c.ZIPCODE AS zipcode,
+                c.IMAGE_URL AS image, i.PRICE AS price
+         FROM USER_ITEMS c
+         JOIN ITEMS i ON i.ITEM_ID = c.ITEM_ID
+         WHERE c.USER_ID = :userId AND c.STATUS = 'KEPT'
+         ORDER BY c.ITEM_ID`,
         { userId: req.user.userId },
     ));
     res.json({ items: result.rows.map(mapItem) });
@@ -783,6 +847,9 @@ if (require.main === module) {
 }
 
 module.exports = app;
+module.exports.mapItem = mapItem;
+module.exports.shoppingCategories = shoppingCategories;
+module.exports.validateShoppingPreferences = validateShoppingPreferences;
 module.exports.validatePassword = validatePassword;
 module.exports.sendPasswordResetEmail = sendPasswordResetEmail;
 module.exports.sendVerificationEmail = sendVerificationEmail;

@@ -20,7 +20,14 @@ async function apiRequest(url, options = {}) {
 
 async function requireSignedIn(returnTo) {
     try {
-        return (await apiRequest("/api/me")).user;
+        const { user } = await apiRequest("/api/me");
+        if (user.needsPreferences) {
+            const preferencesUrl = new URL("/preferences.html", window.location.origin);
+            if (returnTo === "/saved.html") preferencesUrl.searchParams.set("returnTo", returnTo);
+            window.location.replace(preferencesUrl.toString());
+            return null;
+        }
+        return user;
     } catch (error) {
         if (error.status === 401) {
             window.location.replace(`/auth.html?returnTo=${encodeURIComponent(returnTo)}`);
@@ -28,6 +35,11 @@ async function requireSignedIn(returnTo) {
         }
         throw error;
     }
+}
+
+function formatItemPrice(price) {
+    if (price === null || price === undefined) return "Price not listed";
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(price);
 }
 
 function isGuestSession() {

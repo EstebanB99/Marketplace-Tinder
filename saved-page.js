@@ -37,13 +37,17 @@ function makeSavedCard(item) {
     description.className = "description";
     description.textContent = item.description;
 
+    const price = document.createElement("p");
+    price.className = "item-price";
+    price.textContent = formatItemPrice(item.price);
+
     const removeButton = document.createElement("button");
     removeButton.className = "remove-button";
     removeButton.type = "button";
     removeButton.textContent = "Remove from saved";
     removeButton.setAttribute("aria-label", `Remove ${item.name} from saved items`);
     removeButton.addEventListener("click", () => removeSavedItem(item, removeButton));
-    content.append(titleLine, description, makeSavedLocation(item), removeButton);
+    content.append(titleLine, price, description, makeSavedLocation(item), removeButton);
     article.append(image, content);
     return article;
 }

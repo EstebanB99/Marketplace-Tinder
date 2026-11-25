@@ -10,13 +10,17 @@ const continueLink = document.getElementById("continue-link");
 
     window.history.replaceState({}, "", "/verify-email.html");
     try {
-        await apiRequest("/api/auth/verify-email", {
+        const result = await apiRequest("/api/auth/verify-email", {
             method: "POST",
             body: JSON.stringify({ token })
         });
-        statusMessage.textContent = "Your email is verified and your account is ready.";
+        statusMessage.textContent = "Your email is verified. Tell us what kinds of finds you like.";
+        continueLink.href = "/preferences.html";
+        continueLink.textContent = "Choose your preferences";
         continueLink.hidden = false;
-        window.setTimeout(() => window.location.replace("/"), 1500);
+        window.setTimeout(() => {
+            window.location.replace(result.user.needsPreferences ? "/preferences.html" : "/");
+        }, 1200);
     } catch (error) {
         console.error("Could not verify the email address.", error);
         statusMessage.textContent = error.message;
