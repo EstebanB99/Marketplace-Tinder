@@ -49,6 +49,7 @@ function isGuestSession() {
 function startGuestSession() {
     sessionStorage.setItem("found_guest_state", JSON.stringify({ reviewed: [], saved: [] }));
     sessionStorage.setItem("found_guest_mode", "true");
+    sessionStorage.removeItem("found_guest_swipe_tip_seen");
 }
 
 function readGuestState() {
@@ -71,6 +72,7 @@ async function signOut() {
     if (isGuestSession()) {
         sessionStorage.removeItem("found_guest_mode");
         sessionStorage.removeItem("found_guest_state");
+        sessionStorage.removeItem("found_guest_swipe_tip_seen");
         window.location.replace("/auth.html");
         return;
     }

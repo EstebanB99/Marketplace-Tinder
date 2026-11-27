@@ -57,6 +57,7 @@ test("serves the account and marketplace pages with their client scripts", async
         "/reset-password.html",
         "/api.js",
         "/marketplace.js",
+        "/index.html",
         "/saved-page.js",
         "/auth.js",
         "/preferences.js",
@@ -66,6 +67,23 @@ test("serves the account and marketplace pages with their client scripts", async
         const response = await fetch(`${origin}${route}`);
         assert.equal(response.status, 200, `${route} should be available`);
     }
+});
+
+test("provides compact mobile navigation and a guest swipe explanation", async () => {
+    const response = await fetch(`${origin}/`);
+    const page = await response.text();
+    assert.match(page, /class="mobile-nav"/);
+    assert.match(page, /aria-label="Saved items"/);
+    assert.match(page, /id="mobile-sign-out"/);
+    assert.match(page, /id="guest-swipe-dialog"/);
+    assert.match(page, /Swipe <strong>right<\/strong> to keep a find, or <strong>left<\/strong> to pass/);
+
+    const script = await fetch(`${origin}/marketplace.js`);
+    const source = await script.text();
+    assert.match(source, /event\.pointerType === "mouse"/);
+    assert.match(source, /deltaX > 0 \? "keep" : "pass"/);
+    assert.match(source, /matchMedia\("\(max-width: 520px\)"\)/);
+    assert.match(page, /touch-action: pan-y/);
 });
 
 test("collects shopping preferences for new accounts", async () => {

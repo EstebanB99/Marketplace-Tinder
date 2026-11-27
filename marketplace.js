@@ -4,6 +4,7 @@ const restoreButton = document.getElementById("restore-passed");
 const restoreStatus = document.getElementById("restore-status");
 let currentItem = null;
 let choicePending = false;
+let swipeCommitPending = false;
 let guestItems = [];
 
 function makeLocation(item) {
@@ -118,12 +119,81 @@ function renderItem(item) {
     keepButton.addEventListener("click", () => chooseItem("keep"));
     footer.append(passButton, keepButton);
 
+    let pointerStart = null;
+    article.addEventListener("pointerdown", (event) => {
+        if (event.pointerType === "mouse" || !event.isPrimary || choicePending || swipeCommitPending ||
+            event.target.closest("button, a")) return;
+        pointerStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+        article.classList.add("is-dragging");
+        article.setPointerCapture(event.pointerId);
+    });
+    article.addEventListener("pointermove", (event) => {
+        if (!pointerStart || event.pointerId !== pointerStart.pointerId) return;
+        const deltaX = event.clientX - pointerStart.x;
+        const deltaY = event.clientY - pointerStart.y;
+        if (Math.abs(deltaY) > Math.abs(deltaX) * 1.15) {
+            article.style.transform = "";
+            article.style.removeProperty("--swipe-rotation");
+            delete article.dataset.swipeDirection;
+            delete article.dataset.swipeLabel;
+            return;
+        }
+        article.style.transform = `translateX(${deltaX}px) rotate(${deltaX * 0.035}deg)`;
+        if (Math.abs(deltaX) >= 30) {
+            const direction = deltaX > 0 ? "right" : "left";
+            article.dataset.swipeDirection = direction;
+            article.dataset.swipeLabel = direction === "right" ? "KEEP" : "PASS";
+        } else {
+            delete article.dataset.swipeDirection;
+            delete article.dataset.swipeLabel;
+        }
+    });
+    article.addEventListener("pointerup", (event) => {
+        if (!pointerStart || event.pointerId !== pointerStart.pointerId) return;
+        const deltaX = event.clientX - pointerStart.x;
+        const deltaY = event.clientY - pointerStart.y;
+        pointerStart = null;
+        if (Math.abs(deltaY) > Math.abs(deltaX) * 1.15 || Math.abs(deltaX) < Math.max(70, article.clientWidth * 0.22)) {
+            resetSwipeCard(article);
+            return;
+        }
+
+        const decision = deltaX > 0 ? "keep" : "pass";
+        swipeCommitPending = true;
+        article.classList.remove("is-dragging");
+        article.classList.add("is-swipe-committing");
+        article.style.transform = `translateX(${deltaX > 0 ? window.innerWidth : -window.innerWidth}px) rotate(${deltaX > 0 ? 14 : -14}deg)`;
+        article.style.opacity = "0";
+        window.setTimeout(() => {
+            swipeCommitPending = false;
+            chooseItem(decision);
+        }, 180);
+    });
+    article.addEventListener("pointercancel", () => {
+        pointerStart = null;
+        resetSwipeCard(article);
+    });
+    article.addEventListener("lostpointercapture", () => {
+        if (!swipeCommitPending) {
+            pointerStart = null;
+            resetSwipeCard(article);
+        }
+    });
+
     const keyboardHint = document.createElement("p");
     keyboardHint.className = "keyboard-hint";
     keyboardHint.textContent = "Press ← to pass or → to keep";
     content.append(titleLine, price, description, makeLocation(item), footer, keyboardHint);
     article.append(photoWrap, content);
     itemArea.replaceChildren(article);
+}
+
+function resetSwipeCard(article) {
+    article.classList.remove("is-dragging", "is-swipe-committing");
+    article.style.transform = "";
+    article.style.opacity = "";
+    delete article.dataset.swipeDirection;
+    delete article.dataset.swipeLabel;
 }
 
 async function loadNextItem() {
@@ -159,7 +229,7 @@ async function loadNextItem() {
 }
 
 async function chooseItem(decision) {
-    if (!currentItem || choicePending) return;
+    if (!currentItem || choicePending || swipeCommitPending) return;
     choicePending = true;
     const item = currentItem;
     try {
@@ -192,6 +262,18 @@ async function chooseItem(decision) {
     }
 }
 
+function showGuestSwipeTip() {
+    if (!isGuestSession() || !window.matchMedia("(max-width: 520px)").matches ||
+        sessionStorage.getItem("found_guest_swipe_tip_seen") === "true") return;
+
+    sessionStorage.setItem("found_guest_swipe_tip_seen", "true");
+    document.getElementById("guest-swipe-dialog").showModal();
+}
+
+document.getElementById("dismiss-swipe-tip").addEventListener("click", () => {
+    document.getElementById("guest-swipe-dialog").close();
+});
+
 restoreButton.addEventListener("click", async () => {
     restoreButton.disabled = true;
     restoreStatus.hidden = false;
@@ -212,12 +294,15 @@ restoreButton.addEventListener("click", async () => {
     }
 });
 
-document.getElementById("sign-out").addEventListener("click", () => {
+function handleSignOut() {
     signOut().catch((error) => {
         console.error("Could not sign out.", error);
         announcement.textContent = error.message;
     });
-});
+}
+
+document.getElementById("sign-out").addEventListener("click", handleSignOut);
+document.getElementById("mobile-sign-out").addEventListener("click", handleSignOut);
 
 document.addEventListener("keydown", (event) => {
     if (event.altKey || event.ctrlKey || event.metaKey ||
@@ -230,8 +315,10 @@ document.addEventListener("keydown", (event) => {
     if (isGuestSession()) {
         document.getElementById("account-email").textContent = "Guest session";
         document.getElementById("sign-out").textContent = "Exit guest";
+        document.getElementById("mobile-sign-out-label").textContent = "Exit guest";
         guestItems = (await apiRequest("/api/guest/items")).items;
         await loadNextItem();
+        showGuestSwipeTip();
         return;
     }
 
